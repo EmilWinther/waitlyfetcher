@@ -9,3 +9,6 @@
 /dataSources/
 /dataSources.local.xml
 .idea/
+
+# Build output
+/waitlyfetcher

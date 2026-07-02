@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"html/template"
 	"io"
@@ -11,7 +13,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
+
+const defaultBaseURL = "https://waitly.eu"
 
 // ---- Raw API response types (only the fields we use) ----
 
@@ -167,20 +172,20 @@ func flatten(items []apiItem) []Place {
 
 // ---- fetch ----
 
-func fetchWaitingLists(addressID, locale string, limit int) ([]apiItem, error) {
+func fetchWaitingLists(ctx context.Context, baseURL, addressID, locale string, limit int) ([]apiItem, error) {
 	url := fmt.Sprintf(
-		"https://waitly.eu/api/similarWaitingLists?addressId=%s&limitOfItems=%d&locale=%s",
-		addressID, limit, locale,
+		"%s/api/similarWaitingLists?addressId=%s&limitOfItems=%d&locale=%s",
+		baseURL, addressID, limit, locale,
 	)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Set("accept", "*/*")
 	req.Header.Set("accept-language", "en-GB,en;q=0.6")
-	req.Header.Set("referer", fmt.Sprintf("https://waitly.eu/%s/foreninger/0/%s", locale, addressID))
+	req.Header.Set("referer", fmt.Sprintf("%s/%s/foreninger/0/%s", baseURL, locale, addressID))
 	req.Header.Set("sec-fetch-dest", "empty")
 	req.Header.Set("sec-fetch-mode", "cors")
 	req.Header.Set("sec-fetch-site", "same-origin")
@@ -197,7 +202,7 @@ func fetchWaitingLists(addressID, locale string, limit int) ([]apiItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API returned %d: %s", resp.StatusCode, truncate(string(body), 500))
 	}
 
@@ -215,55 +220,19 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-// ---- main ----
+// ---- render ----
 
-func main() {
-	addressID := "a-b-heimdal"
-	locale := "da"
-	limit := 1000
-	outFile := "index.html"
+type pageData struct {
+	Total      int
+	WithCoords int
+	Source     string
+	RawJSON    template.JS
+}
 
-	args := os.Args[1:]
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "-address":
-			if i+1 < len(args) {
-				addressID = args[i+1]
-				i++
-			}
-		case "-locale":
-			if i+1 < len(args) {
-				locale = args[i+1]
-				i++
-			}
-		case "-limit":
-			if i+1 < len(args) {
-				limit, _ = strconv.Atoi(args[i+1])
-				i++
-			}
-		case "-out":
-			if i+1 < len(args) {
-				outFile = args[i+1]
-				i++
-			}
-		case "-h", "-help", "--help":
-			fmt.Println("Usage: waitlyfetcher [-address ID] [-locale da] [-limit 1000] [-out index.html]")
-			return
-		}
-	}
-
-	log.Printf("Fetching waiting lists for %q (locale=%s, limit=%d)…", addressID, locale, limit)
-
-	items, err := fetchWaitingLists(addressID, locale, limit)
-	if err != nil {
-		log.Fatalf("fetch error: %v", err)
-	}
-	log.Printf("Got %d associations", len(items))
-
-	places := flatten(items)
+func renderPage(w io.Writer, places []Place, source string) error {
 	rawJSON, err := json.Marshal(places)
 	if err != nil {
-		log.Fatalf("json marshal: %v", err)
+		return fmt.Errorf("json marshal: %w", err)
 	}
 
 	withCoords := 0
@@ -273,28 +242,69 @@ func main() {
 		}
 	}
 
-	data := struct {
-		Total      int
-		WithCoords int
-		Source     string
-		RawJSON    template.JS
-	}{
+	tmpl, err := template.New("page").Parse(htmlTemplate)
+	if err != nil {
+		return fmt.Errorf("parse template: %w", err)
+	}
+	return tmpl.Execute(w, pageData{
 		Total:      len(places),
 		WithCoords: withCoords,
-		Source:     addressID,
+		Source:     source,
 		RawJSON:    template.JS(rawJSON),
+	})
+}
+
+// ---- main ----
+
+func run() error {
+	addressID := flag.String("address", "a-b-heimdal", "Waitly address/association ID to search around")
+	locale := flag.String("locale", "da", "locale for the API request")
+	limit := flag.Int("limit", 1000, "maximum number of associations to fetch")
+	outFile := flag.String("out", "index.html", "output HTML file")
+	timeout := flag.Duration("timeout", 30*time.Second, "HTTP request timeout")
+	flag.Parse()
+
+	if *limit < 1 {
+		return fmt.Errorf("-limit must be at least 1, got %d", *limit)
 	}
 
-	f, err := os.Create(outFile)
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+
+	log.Printf("Fetching waiting lists for %q (locale=%s, limit=%d)…", *addressID, *locale, *limit)
+
+	items, err := fetchWaitingLists(ctx, defaultBaseURL, *addressID, *locale, *limit)
 	if err != nil {
-		log.Fatalf("create file: %v", err)
+		return fmt.Errorf("fetch: %w", err)
 	}
-	defer f.Close()
+	log.Printf("Got %d associations", len(items))
 
-	tmpl := template.Must(template.New("page").Parse(htmlTemplate))
-	if err := tmpl.Execute(f, data); err != nil {
-		log.Fatalf("render: %v", err)
+	places := flatten(items)
+
+	f, err := os.Create(*outFile)
+	if err != nil {
+		return fmt.Errorf("create file: %w", err)
+	}
+	if err := renderPage(f, places, *addressID); err != nil {
+		f.Close()
+		return fmt.Errorf("render: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close file: %w", err)
 	}
 
-	log.Printf("Wrote %s (%d associations, %d with coordinates)", outFile, len(places), withCoords)
+	withCoords := 0
+	for _, p := range places {
+		if p.Lat != nil && p.Lng != nil {
+			withCoords++
+		}
+	}
+	log.Printf("Wrote %s (%d associations, %d with coordinates)", *outFile, len(places), withCoords)
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
 }
