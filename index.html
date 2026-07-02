@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Waitly · Boligforeninger</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --panel: #ffffff;
+    --ink: #1c2433;
+    --muted: #6b7488;
+    --line: #e6e9f2;
+    --brand: #3056d3;
+    --brand-d: #1f3aa6;
+    --accent: #0ea66f;
+    --warn: #d97706;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+
+  header {
+    background: linear-gradient(135deg, var(--brand-d), var(--brand));
+    color: #fff;
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 1px 10px rgba(20,30,60,.25);
+    position: relative;
+    z-index: 500;
+  }
+  header h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -.4px; }
+  header .sub { font-size: .8rem; opacity: .8; margin-top: 1px; }
+  header .stats { margin-left: auto; display: flex; gap: 10px; }
+  .stat {
+    background: rgba(255,255,255,.14);
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 12px;
+    padding: 6px 14px;
+    text-align: center;
+    min-width: 78px;
+  }
+  .stat b { display: block; font-size: 1.15rem; font-weight: 700; line-height: 1.1; }
+  .stat span { font-size: .68rem; text-transform: uppercase; letter-spacing: .5px; opacity: .85; }
+
+  .layout { display: grid; grid-template-columns: 400px 1fr; height: calc(100vh - 70px); }
+
+  .panel { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+
+  .controls { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+  .search-wrap { position: relative; }
+  .search-wrap svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); opacity: .45; }
+  #search {
+    width: 100%; border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 12px 9px 34px; font-size: .92rem; outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  #search:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(48,86,211,.12); }
+  .row { display: flex; gap: 8px; }
+  .field { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+  .field label { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  select {
+    border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; font-size: .85rem;
+    background: #fff; outline: none; cursor: pointer; transition: border-color .15s;
+  }
+  select:focus { border-color: var(--brand); }
+  .count-bar { font-size: .78rem; color: var(--muted); display: flex; align-items: center; justify-content: space-between; }
+  .reset { background: none; border: none; color: var(--brand); font-size: .78rem; cursor: pointer; font-weight: 600; }
+  .reset:hover { text-decoration: underline; }
+
+  .list { overflow-y: auto; flex: 1; }
+  .card { padding: 13px 16px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .12s; }
+  .card:hover { background: #f5f8ff; }
+  .card.active { background: #eef3ff; box-shadow: inset 3px 0 0 var(--brand); }
+  .card-name { font-weight: 650; font-size: .95rem; color: var(--ink); }
+  .card-addr { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 9px; font-size: .73rem; font-weight: 600; background: #eef1f8; color: #4a5573; }
+  .pill.units { background: #eaf1ff; color: var(--brand); }
+  .pill.rent { background: #e9f8f1; color: var(--accent); }
+  .pill.buy { background: #fff4e6; color: var(--warn); }
+  .pill.rooms { background: #f1edff; color: #6d4bd1; }
+  .pill.wait { background: #fdeaf0; color: #c2255c; }
+
+  #map { height: 100%; z-index: 0; }
+  .empty { padding: 48px 24px; text-align: center; color: var(--muted); font-size: .9rem; }
+
+  .leaflet-popup-content { margin: 12px 14px; }
+  .pop h3 { font-size: 1rem; color: var(--brand-d); margin-bottom: 6px; }
+  .pop p { font-size: .82rem; color: #404a5e; margin: 3px 0; }
+  .pop a { display: inline-block; margin-top: 8px; background: var(--brand); color: #fff; padding: 6px 12px; border-radius: 8px; text-decoration: none; font-size: .8rem; font-weight: 600; }
+  .pop a:hover { background: var(--brand-d); }
+  .dot { width: 16px; height: 16px; background: var(--brand); border: 2.5px solid #fff; border-radius: 50%; box-shadow: 0 1px 5px rgba(0,0,0,.45); }
+
+  @media (max-width: 820px) {
+    .layout { grid-template-columns: 1fr; grid-template-rows: 320px 1fr; }
+    .panel { border-right: none; border-bottom: 1px solid var(--line); }
+    header .stats { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="34" height="34" viewBox="0 0 32 32" fill="none">
+    <circle cx="16" cy="16" r="16" fill="rgba(255,255,255,.16)"/>
+    <path d="M16 6.5l8 6.8V25H8V13.3l8-6.8z" fill="#fff"/>
+    <rect x="13.5" y="17" width="5" height="8" fill="var(--brand)"/>
+  </svg>
+  <div>
+    <h1>Waitly Boligforeninger</h1>
+    <div class="sub">Andelsboligforeninger nær <b>a-b-heimdal</b></div>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>100</b><span>Foreninger</span></div>
+    <div class="stat"><b>100</b><span>På kort</span></div>
+  </div>
+</header>
+
+<div class="layout">
+  <div class="panel">
+    <div class="controls">
+      <div class="search-wrap">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="text" id="search" placeholder="Søg navn, adresse eller by…" autocomplete="off">
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="sortBy">Sortér</label>
+          <select id="sortBy">
+            <option value="name">Navn (A–Å)</option>
+            <option value="name_desc">Navn (Å–A)</option>
+            <option value="ext_desc">Længst venteliste</option>
+            <option value="ext">Korteste venteliste</option>
+            <option value="units_desc">Flest enheder</option>
+            <option value="units">Færrest enheder</option>
+            <option value="rent">Husleje lavest</option>
+            <option value="rent_desc">Husleje højest</option>
+            <option value="buy">Pris lavest</option>
+            <option value="buy_desc">Pris højest</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="filterCity">By</label>
+          <select id="filterCity"><option value="">Alle byer</option></select>
+        </div>
+        <div class="field">
+          <label for="filterRooms">Værelser</label>
+          <select id="filterRooms">
+            <option value="">Alle</option>
+            <option value="1">1+ vær.</option>
+            <option value="2">2+ vær.</option>
+            <option value="3">3+ vær.</option>
+            <option value="4">4+ vær.</option>
+          </select>
+        </div>
+      </div>
+      <div class="count-bar">
+        <span id="countLabel"></span>
+        <button class="reset" id="resetBtn">Nulstil filtre</button>
+      </div>
+    </div>
+    <div class="list" id="list"></div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script>
+const RAW = [{"id":1,"name":"A/B Middelfartsgården","address":"Middelfartgade 10, 2100 København Ø","zip":"2100","city":"København Ø","lat":55.70925582,"lng":12.58659337,"units":114,"buyMin":700000,"buyMax":2248000,"rentMin":3000,"rentMax":5000,"roomsMin":1,"roomsMax":3,"extTotal":1159,"extActive":1052,"currency":"DKK","url":"https://app.waitly.dk/signup/6133a319-944a-4246-88f9-9882822ea379","signUpText":"Tilmelding"},{"id":769,"name":"A/B Borups Plads","address":"Borups Plads 28, 2200 København N","zip":"2200","city":"København N","lat":55.69163112,"lng":12.53928258,"units":193,"buyMin":861000,"buyMax":3904800,"rentMin":2440,"rentMax":9737,"roomsMin":1,"roomsMax":6,"extTotal":1565,"extActive":1433,"currency":"DKK","url":"https://app.waitly.dk/signup/88ba6647-7b12-4f59-8985-77a8d76559c3","signUpText":"Tilmelding"},{"id":2,"name":"A/B Thor","address":"Nærumgade 18, st. tv, 2200 København N","zip":"2200","city":"København N","lat":55.69388133,"lng":12.53901284,"units":150,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":400,"extActive":348,"currency":"DKK","url":"https://app.waitly.dk/signup/bbcd8616-c4f3-46d5-bb7d-8b61bf7daeae","signUpText":"Tilmelding"},{"id":3,"name":"A/B Halmtorvet 36-42","address":"Halmtorvet 42, 1700 København V","zip":"1700","city":"København V","lat":55.66923911,"lng":12.5576768,"units":37,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":125,"extActive":118,"currency":"DKK","url":"https://app.waitly.dk/signup/d8b4cfbb-52bf-4bfb-a889-51b9d480763f","signUpText":"Tilmelding"},{"id":2051,"name":"E/F Østerpark","address":"Jagtvej 213, 2100 København Ø","zip":"2100","city":"København Ø","lat":55.70895625,"lng":12.574424,"units":null,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/6ffe315b-e63d-4836-bec6-7096e1085ac9","signUpText":"Tilmelding"},{"id":4,"name":"A/B Enghaven","address":"Ny Carlsberg Vej 36, 1760 København V","zip":"1760","city":"København V","lat":55.66651812,"lng":12.53988012,"units":256,"buyMin":1025000,"buyMax":2831000,"rentMin":2310,"rentMax":6374,"roomsMin":null,"roomsMax":null,"extTotal":978,"extActive":866,"currency":"DKK","url":"https://app.waitly.dk/signup/fefc19d6-7bd8-4dcd-8afc-aed374d6d872","signUpText":"Tilmelding"},{"id":260,"name":"A/B Slotsgården","address":"Marienlyst Alle 30, 1. 1, 3000 Helsingør","zip":"3000","city":"Helsingør","lat":56.04135716,"lng":12.60396165,"units":72,"buyMin":1221405,"buyMax":2407912,"rentMin":3318,"rentMax":6543,"roomsMin":1,"roomsMax":4,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/bf9c3309-f851-4723-bcb2-41ec761454f8","signUpText":"Tilmelding"},{"id":772,"name":"A/B Ringkøbinggården","address":"Vordingborggade 89, 2100 København Ø","zip":"2100","city":"København Ø","lat":55.70851045,"lng":12.58765557,"units":109,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":1,"roomsMax":4,"extTotal":null,"extActive":null,"currency":"DKK","url":"","signUpText":""},{"id":2052,"name":"A/B Skjoldvig","address":"Vig Bakke 3M, 4560 Vig","zip":"4560","city":"Vig","lat":55.8547183,"lng":11.5765093,"units":24,"buyMin":550000,"buyMax":700000,"rentMin":5800,"rentMax":6200,"roomsMin":3,"roomsMax":4,"extTotal":11,"extActive":10,"currency":"DKK","url":"https://app.waitly.dk/signup/ac4cb0e3-8263-44f3-9652-1e002501d6de","signUpText":"Tilmelding"},{"id":773,"name":"A/B Tjørnerækken 9-15 m.fl.","address":"Prags Boulevard 68, st., 2300 København S","zip":"2300","city":"København S","lat":55.66781775,"lng":12.61563986,"units":46,"buyMin":200000,"buyMax":2000000,"rentMin":3000,"rentMax":11000,"roomsMin":1,"roomsMax":5,"extTotal":319,"extActive":306,"currency":"DKK","url":"https://app.waitly.dk/signup/f56ec7b5-f99f-4d9f-a35e-e3fc79fbeebd","signUpText":"Tilmelding"},{"id":264,"name":"A/B Frederiksberg Have Sorø","address":"Frederiksberg Have 5, 4180 Sorø","zip":"4180","city":"Sorø","lat":55.41602981,"lng":11.56722567,"units":24,"buyMin":887500,"buyMax":945000,"rentMin":5514,"rentMax":5750,"roomsMin":3,"roomsMax":4,"extTotal":42,"extActive":41,"currency":"DKK","url":"https://app.waitly.dk/signup/637de379-c683-406e-b714-00f4de3303bb","signUpText":"Tilmelding"},{"id":776,"name":"A/B Blæsenborg","address":"Gemmet 2, st. th, 2400 København NV","zip":"2400","city":"København NV","lat":55.70711819,"lng":12.51591492,"units":33,"buyMin":965000,"buyMax":2760000,"rentMin":3000,"rentMax":8000,"roomsMin":2,"roomsMax":7,"extTotal":102,"extActive":91,"currency":"DKK","url":"https://app.waitly.dk/signup/a79e9e5d-74f4-4155-b55d-c0c3e2c6dea3","signUpText":"Tilmelding"},{"id":2056,"name":"A/B Ole Mimer","address":"Ole Jørgensens Gade 14, 2200 København N","zip":"2200","city":"København N","lat":55.70073247,"lng":12.54131707,"units":27,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":1,"roomsMax":4,"extTotal":283,"extActive":277,"currency":"DKK","url":"https://app.waitly.dk/signup/a62e7753-3b6c-4dc4-aafe-a78e14ca1386","signUpText":"Tilmelding"},{"id":9,"name":"A/B Tvegaarden","address":"Vigerslev Allé 84, 1. th, 2500 Valby","zip":"2500","city":"Valby","lat":55.6615488,"lng":12.51085632,"units":152,"buyMin":450000,"buyMax":1600000,"rentMin":1290,"rentMax":5000,"roomsMin":1,"roomsMax":5,"extTotal":937,"extActive":692,"currency":"DKK","url":"https://app.waitly.dk/signup/ddcef448-68c0-4b08-9118-91bb5d7b5639","signUpText":"Tilmelding"},{"id":265,"name":"A/B Tømrerbo","address":"Åboulevard 10, 2200 København N","zip":"2200","city":"København N","lat":55.68318539,"lng":12.55660108,"units":20,"buyMin":124000,"buyMax":500000,"rentMin":5800,"rentMax":18000,"roomsMin":1,"roomsMax":3,"extTotal":131,"extActive":126,"currency":"DKK","url":"https://app.waitly.dk/signup/cf97fa21-f369-4266-ad6f-4b4787fbb8f6","signUpText":"Tilmelding"},{"id":777,"name":"A/B Skibelund","address":"Skibelundvej 7, st., 2720 Vanløse","zip":"2720","city":"Vanløse","lat":55.69217198,"lng":12.49531581,"units":38,"buyMin":316000,"buyMax":1000000,"rentMin":2800,"rentMax":8500,"roomsMin":1,"roomsMax":5,"extTotal":102,"extActive":97,"currency":"DKK","url":"https://app.waitly.dk/signup/e55e2e81-933a-4061-86c2-7483de304bc8","signUpText":"Tilmelding"},{"id":266,"name":"A/B Nørrebrogade 66-70","address":"Nørrebrogade 70, 2200 København N","zip":"2200","city":"København N","lat":55.69120805,"lng":12.5538506,"units":52,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/76ccd65c-2cf8-4c41-ae6a-b8600242e29d","signUpText":"Tilmelding"},{"id":778,"name":"Andelsboligforeningen Bøgeskoven","address":"Dyremosevej 2E, 4450 Jyderup","zip":"4450","city":"Jyderup","lat":55.6614794,"lng":11.3955296,"units":22,"buyMin":575000,"buyMax":575000,"rentMin":4500,"rentMax":4500,"roomsMin":3,"roomsMax":3,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/2abb4b28-e285-4fc5-994e-bee5ba8de0ee","signUpText":"Tilmelding"},{"id":11,"name":"A/B Gl Kongevej 35 A - 37 A","address":"Gammel Kongevej 37A, 1610 København V","zip":"1610","city":"København V","lat":55.67381972,"lng":12.55239096,"units":50,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":795,"extActive":731,"currency":"DKK","url":"https://app.waitly.dk/signup/f198361d-5ac6-4eab-b102-2f8124d2fcbf","signUpText":"Tilmelding"},{"id":2059,"name":"A/B Kobberhjørnet","address":"Teatergade 3, 4700 Næstved","zip":"4700","city":"Næstved","lat":55.2299963,"lng":11.76326034,"units":26,"buyMin":533637,"buyMax":853836,"rentMin":3391,"rentMax":5155,"roomsMin":2,"roomsMax":4,"extTotal":17,"extActive":17,"currency":"DKK","url":"https://app.waitly.dk/signup/beb3ecb7-8d97-4af9-9201-4fd010b8538f","signUpText":"Tilmelding"},{"id":12,"name":"A/B Marienborg","address":"Mariendalsvej 33, 2000 Frederiksberg","zip":"2000","city":"Frederiksberg","lat":55.68973271,"lng":12.53560102,"units":77,"buyMin":1500000,"buyMax":1700000,"rentMin":null,"rentMax":null,"roomsMin":2,"roomsMax":4,"extTotal":353,"extActive":309,"currency":"DKK","url":"https://app.waitly.dk/signup/f96c7465-1203-4d6b-9c1c-5fb4a88499c3","signUpText":"Tilmelding"},{"id":524,"name":"A/B Victor Bendix","address":"Victor Bendix Gade 7, st. th, 2100 København Ø","zip":"2100","city":"København Ø","lat":55.71132576,"lng":12.56623986,"units":30,"buyMin":1564000,"buyMax":1962000,"rentMin":5500,"rentMax":7500,"roomsMin":2,"roomsMax":3,"extTotal":289,"extActive":262,"currency":"DKK","url":"https://app.waitly.dk/signup/53c2cb9b-0076-4b0e-b865-8c9b116fb093","signUpText":"Tilmelding"},{"id":1036,"name":"A/B A. F. Beyersvej 17","address":"A.F. Beyers Vej 17, 1. 2, 2720 Vanløse","zip":"2720","city":"Vanløse","lat":55.69097851,"lng":12.51132944,"units":12,"buyMin":765460,"buyMax":883223,"rentMin":4537,"rentMax":9619,"roomsMin":2,"roomsMax":4,"extTotal":20,"extActive":19,"currency":"DKK","url":"https://app.waitly.dk/signup/fe1ebdbf-78cb-4720-bfae-22acdb1c3b9f","signUpText":"Tilmelding"},{"id":13,"name":"A/B Kolibrien","address":"Rentemestervej 31, 2400 København NV","zip":"2400","city":"København NV","lat":55.70648241,"lng":12.52852539,"units":43,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":250,"extActive":230,"currency":"DKK","url":"https://app.waitly.dk/signup/0d855115-cb76-4e98-bd4c-1f9a38c13b99","signUpText":"Tilmelding"},{"id":269,"name":"A/B Borgervangen","address":"Sibeliusgade 7, 4. tv, 2100 København Ø","zip":"2100","city":"København Ø","lat":55.71577446,"lng":12.57653319,"units":81,"buyMin":607716,"buyMax":1732445,"rentMin":1939,"rentMax":5532,"roomsMin":1,"roomsMax":3,"extTotal":100,"extActive":84,"currency":"DKK","url":"https://app.waitly.dk/signup/0e925903-6cd0-4ee2-9a41-557fe4ca6fe1","signUpText":"Tilmelding"},{"id":15,"name":"A/B Grøndalsvænge","address":"Vindruevej 2A, 2400 København NV","zip":"2400","city":"København NV","lat":55.69500624,"lng":12.51672887,"units":389,"buyMin":3000000,"buyMax":7000000,"rentMin":4000,"rentMax":6500,"roomsMin":3,"roomsMax":5,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/aabb5385-c05e-4858-bb92-f9be4fa73226","signUpText":"Tilmelding"},{"id":783,"name":"A/B Gartnerhaven I","address":"Gartnerhaven 43, 4230 Skælskør","zip":"4230","city":"Skælskør","lat":55.26331281,"lng":11.30832411,"units":27,"buyMin":602275,"buyMax":602275,"rentMin":6300,"rentMax":6300,"roomsMin":2,"roomsMax":3,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/0f8e1597-5672-4e80-8983-8ab1913d7604","signUpText":"Tilmelding"},{"id":2063,"name":"A/B Lærkevej 4-6","address":"Lærkevej 4, 2., 2400 København NV","zip":"2400","city":"København NV","lat":55.70241716,"lng":12.53076779,"units":16,"buyMin":1200000,"buyMax":2400000,"rentMin":4000,"rentMax":8000,"roomsMin":2,"roomsMax":4,"extTotal":41,"extActive":41,"currency":"DKK","url":"https://app.waitly.dk/signup/5954dde3-5fe2-44ee-a594-a2d945a8d35d","signUpText":"Tilmelding"},{"id":16,"name":"A/B Lyngby Port","address":"Christian X's Alle 6, st. th, 2800 Kongens Lyngby","zip":"2800","city":"Kongens Lyngby","lat":55.76381387,"lng":12.51065818,"units":120,"buyMin":450000,"buyMax":850000,"rentMin":6850,"rentMax":12102,"roomsMin":2,"roomsMax":4,"extTotal":253,"extActive":230,"currency":"DKK","url":"https://app.waitly.dk/signup/2d65dffa-6975-4da4-ba2f-c96c61081d37","signUpText":"Tilmelding"},{"id":2064,"name":"A/B Munkebo","address":"Munkeleddet 26, Svogerslev, 4000 Roskilde","zip":"4000","city":"Roskilde","lat":55.6351749,"lng":12.02021684,"units":11,"buyMin":2000000,"buyMax":2000000,"rentMin":2995,"rentMax":2995,"roomsMin":2,"roomsMax":3,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/32bc350e-7774-44b0-a7b5-318179c8b5c2","signUpText":"Tilmelding"},{"id":17,"name":"A/B Wiliansgaard","address":"Griffenfeldsgade 3, st., 2200 København N","zip":"2200","city":"København N","lat":55.68938383,"lng":12.55570505,"units":28,"buyMin":1813500,"buyMax":4153500,"rentMin":1900,"rentMax":4100,"roomsMin":3,"roomsMax":6,"extTotal":356,"extActive":344,"currency":"DKK","url":"https://app.waitly.dk/signup/e3bcec0f-c498-4de8-b37c-10e2dbeda418","signUpText":"Tilmelding"},{"id":2065,"name":"A/B Sorthøjhusene","address":"Sorthøj 15, 9000 Aalborg","zip":"9000","city":"Aalborg","lat":57.02630122,"lng":9.88432475,"units":18,"buyMin":1900000,"buyMax":2700000,"rentMin":4600,"rentMax":5400,"roomsMin":2,"roomsMax":3,"extTotal":82,"extActive":82,"currency":"DKK","url":"https://app.waitly.dk/signup/60777d7b-d33d-447b-8894-fe820b1087ce","signUpText":"Tilmelding"},{"id":786,"name":"A/B Lille Colbjørnsensgade 1-3","address":"Lille Colbjørnsensgade 3, st. th, 1703 København V","zip":"1703","city":"København V","lat":55.67052405,"lng":12.56301427,"units":29,"buyMin":1500000,"buyMax":2500000,"rentMin":4400,"rentMax":6000,"roomsMin":2,"roomsMax":4,"extTotal":167,"extActive":152,"currency":"DKK","url":"https://app.waitly.dk/signup/51ea34b1-7738-48bd-87a2-2adfc99386e5","signUpText":"Tilmelding"},{"id":276,"name":"A/B Pederlykkesgaard","address":"Peder Lykkes Vej 53, st. th, 2300 København S","zip":"2300","city":"København S","lat":55.65378783,"lng":12.60218813,"units":100,"buyMin":607716,"buyMax":1732445,"rentMin":3829,"rentMax":6685,"roomsMin":2,"roomsMax":4,"extTotal":279,"extActive":252,"currency":"DKK","url":"https://app.waitly.dk/signup/4b5293bf-f0f0-4741-a4f4-94be8d960e1b","signUpText":"Tilmelding"},{"id":790,"name":"A/B Kongohaven","address":"Kongovej 23, 2300 København S","zip":"2300","city":"København S","lat":55.64824255,"lng":12.62529742,"units":33,"buyMin":803250,"buyMax":2551499,"rentMin":3150,"rentMax":10004,"roomsMin":2,"roomsMax":5,"extTotal":85,"extActive":81,"currency":"DKK","url":"https://app.waitly.dk/signup/54dbf8ce-a1cd-4617-9a33-5179861d9aa9","signUpText":"Tilmelding"},{"id":791,"name":"A/B Enighedens Park 5","address":"Bygmestervej 29, 2400 København NV","zip":"2400","city":"København NV","lat":55.70623686,"lng":12.53642789,"units":50,"buyMin":1300000,"buyMax":2500000,"rentMin":5500,"rentMax":9600,"roomsMin":2,"roomsMax":4,"extTotal":151,"extActive":145,"currency":"DKK","url":"https://app.waitly.dk/signup/005f792e-31d4-476a-8499-de381f2d2da6","signUpText":"Tilmelding"},{"id":280,"name":"A/B Remisen","address":"Sylviavej 21, st. th, 2500 Valby","zip":"2500","city":"Valby","lat":55.66645617,"lng":12.50989404,"units":75,"buyMin":800800,"buyMax":1892800,"rentMin":2248,"rentMax":5314,"roomsMin":1,"roomsMax":5,"extTotal":496,"extActive":454,"currency":"DKK","url":"https://app.waitly.dk/signup/e42623f2-48c2-40b7-b609-9b18052a74eb","signUpText":"Tilmelding"},{"id":792,"name":"A/B Vigerslev Have","address":"Sandhusvej 3, st. th, 2500 Valby","zip":"2500","city":"Valby","lat":55.66284568,"lng":12.48203593,"units":69,"buyMin":900000,"buyMax":1500000,"rentMin":3500,"rentMax":5500,"roomsMin":2,"roomsMax":4,"extTotal":82,"extActive":74,"currency":"DKK","url":"https://app.waitly.dk/signup/0c109123-f89c-4eee-a2b2-9963efa00a03","signUpText":"Tilmelding"},{"id":281,"name":"A/B Gl. Toftegård l","address":"Dronning Margrethes Vej 126, 3650 Ølstykke","zip":"3650","city":"Ølstykke","lat":55.78272538,"lng":12.18191354,"units":27,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":2,"roomsMax":4,"extTotal":64,"extActive":59,"currency":"DKK","url":"https://app.waitly.dk/signup/f37e4886-9a26-4a29-bdd6-2a87445cf9ba","signUpText":"Tilmelding"},{"id":793,"name":"A/B Hesselminde","address":"Vennemindevej 8, st. th, 2100 København Ø","zip":"2100","city":"København Ø","lat":55.70870133,"lng":12.57025857,"units":54,"buyMin":2000000,"buyMax":null,"rentMin":5700,"rentMax":null,"roomsMin":3,"roomsMax":4,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/3e17d16d-e2f7-4338-a063-19fddf9b1b93","signUpText":"Tilmelding"},{"id":2073,"name":"A/B Ålekistevej 42-56","address":"Ålekistevej 48, 1. th, 2720 Vanløse","zip":"2720","city":"Vanløse","lat":55.68161361,"lng":12.48448522,"units":61,"buyMin":200000,"buyMax":700000,"rentMin":4900,"rentMax":11000,"roomsMin":2,"roomsMax":3,"extTotal":0,"extActive":0,"currency":"DKK","url":"","signUpText":""},{"id":794,"name":"A/B Spedalsø 42","address":"Spedalsø 42H, 8700 Horsens","zip":"8700","city":"Horsens","lat":55.85477794,"lng":9.84157309,"units":14,"buyMin":731440,"buyMax":875000,"rentMin":3276,"rentMax":3907,"roomsMin":2,"roomsMax":5,"extTotal":3,"extActive":3,"currency":"DKK","url":"https://app.waitly.dk/signup/cff31da5-abc7-4b80-803d-f0887bfe93fd","signUpText":"Tilmelding"},{"id":284,"name":"A/B Keplersgade 4-6","address":"Keplersgade 6, st. th, 2300 København S","zip":"2300","city":"København S","lat":55.65496532,"lng":12.61155097,"units":24,"buyMin":800000,"buyMax":1100000,"rentMin":3016,"rentMax":4466,"roomsMin":1,"roomsMax":4,"extTotal":93,"extActive":89,"currency":"DKK","url":"https://app.waitly.dk/signup/bfdf0a48-05d7-443a-81b3-f624f31a32cf","signUpText":"Tilmelding"},{"id":31,"name":"A/B Bovieran NærHeden","address":"Skolebakken 2, Nærheden, 2640 Hedehusene","zip":"2640","city":"Hedehusene","lat":55.64611952,"lng":12.2058596,"units":55,"buyMin":600000,"buyMax":1000000,"rentMin":7000,"rentMax":9000,"roomsMin":2,"roomsMax":3,"extTotal":235,"extActive":221,"currency":"DKK","url":"https://app.waitly.dk/signup/69f2277d-ef8d-44c2-a642-2c01c9cd96d9","signUpText":"Tilmelding"},{"id":32,"name":"A/B Hellebækgård","address":"Nivågade 1, 2200 København N","zip":"2200","city":"København N","lat":55.69150681,"lng":12.54217138,"units":190,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":1945,"extActive":1665,"currency":"DKK","url":"https://app.waitly.dk/signup/84b6f36c-089e-4d20-97dc-258874f5ff16","signUpText":"Tilmelding"},{"id":33,"name":"A/B Langbrogård","address":"Dybbøl Langbro 1, Dybbøl, 6400 Sønderborg","zip":"6400","city":"Sønderborg","lat":54.91022349,"lng":9.77114142,"units":25,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":80,"extActive":80,"currency":"DKK","url":"https://app.waitly.dk/signup/b74f50fa-7893-43ce-bf0a-284f2f6b5147","signUpText":"Tilmelding"},{"id":35,"name":"A/B Glinkas Rubin","address":"Glinkasvej 2, st. th, 2450 København SV","zip":"2450","city":"København SV","lat":55.64666024,"lng":12.52686749,"units":153,"buyMin":440000,"buyMax":1650000,"rentMin":2300,"rentMax":8500,"roomsMin":1,"roomsMax":4,"extTotal":510,"extActive":462,"currency":"DKK","url":"https://app.waitly.dk/signup/a5433d5e-9880-4411-96ce-770ab8cc465f","signUpText":"Tilmelding"},{"id":36,"name":"A/B Kongens Bryghus","address":"Rahbeks Allé 11, 1749 København V","zip":"1749","city":"København V","lat":55.66945135,"lng":12.5368935,"units":120,"buyMin":890000,"buyMax":7800000,"rentMin":1950,"rentMax":17170,"roomsMin":1,"roomsMax":6,"extTotal":500,"extActive":454,"currency":"DKK","url":"https://app.waitly.dk/signup/d2a0b889-36cd-42c7-a85f-1228631d39a8","signUpText":"Tilmelding"},{"id":37,"name":"A/B Krokusvej 2-16","address":"Krokusvej 2, Stevnstrup, 8870 Langå","zip":"8870","city":"Langå","lat":56.43017467,"lng":9.934294,"units":8,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/6a029a1a-6e7b-421b-ace5-5cf251f7660f","signUpText":"Tilmelding"},{"id":38,"name":"A/B Klosterbakken II","address":"Klosterbakken 35, 4400 Kalundborg","zip":"4400","city":"Kalundborg","lat":55.68972862,"lng":11.11198937,"units":24,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":3,"roomsMax":3,"extTotal":54,"extActive":54,"currency":"DKK","url":"https://app.waitly.dk/signup/da8b47b5-3f0a-4407-9df9-0c422875b65c","signUpText":"Tilmelding"},{"id":806,"name":"A/B Dahlia Hus","address":"Burgundyvej, Valby, København","zip":"2500","city":"København","lat":55.6536268,"lng":12.5066987,"units":99,"buyMin":750000,"buyMax":1460000,"rentMin":7300,"rentMax":13800,"roomsMin":2,"roomsMax":5,"extTotal":280,"extActive":266,"currency":"DKK","url":"https://app.waitly.dk/signup/48f597b4-bc42-4d6a-b240-d9dff17fc368","signUpText":"Tilmelding"},{"id":39,"name":"A/B Fasanen","address":"Smallegade 52E, 2000 Frederiksberg","zip":"2000","city":"Frederiksberg","lat":55.67984286,"lng":12.52262673,"units":78,"buyMin":444000,"buyMax":5500000,"rentMin":1637,"rentMax":7800,"roomsMin":2,"roomsMax":7,"extTotal":null,"extActive":null,"currency":"DKK","url":"","signUpText":""},{"id":807,"name":"A/B Njal L/Saga A","address":"Artillerivej 52, 2300 København S","zip":"2300","city":"København S","lat":55.66418014,"lng":12.5833584,"units":264,"buyMin":900000,"buyMax":3069825,"rentMin":4000,"rentMax":12568,"roomsMin":2,"roomsMax":4,"extTotal":275,"extActive":259,"currency":"DKK","url":"https://app.waitly.dk/signup/ac248b00-1ef6-46e1-88c8-b3e5ed724110","signUpText":"Tilmelding"},{"id":40,"name":"A/B Kirkelunden","address":"Kirkebjerg Allé 74D, 2605 Brøndby","zip":"2605","city":"Brøndby","lat":55.65532911,"lng":12.40016343,"units":24,"buyMin":1400000,"buyMax":1500000,"rentMin":3810,"rentMax":3810,"roomsMin":4,"roomsMax":4,"extTotal":52,"extActive":49,"currency":"DKK","url":"https://app.waitly.dk/signup/d1494aae-4eb7-4b78-9cb4-51986f1dab10","signUpText":"Tilmelding"},{"id":808,"name":"A/B Øbrocentret","address":"Østerbrogade 117, 2100 København Ø","zip":"2100","city":"København Ø","lat":55.71141872,"lng":12.57711108,"units":201,"buyMin":705000,"buyMax":1400000,"rentMin":2850,"rentMax":11498,"roomsMin":1,"roomsMax":4,"extTotal":291,"extActive":246,"currency":"DKK","url":"https://app.waitly.dk/signup/5df967e4-ce6f-44db-ba60-d2a4401ccbf8","signUpText":"Tilmelding"},{"id":41,"name":"A/B Skårupvej II","address":"Skårupvej 216, 2650 Hvidovre","zip":"2650","city":"Hvidovre","lat":55.62875056,"lng":12.46929778,"units":37,"buyMin":600000,"buyMax":1000000,"rentMin":4307,"rentMax":6827,"roomsMin":2,"roomsMax":4,"extTotal":89,"extActive":80,"currency":"DKK","url":"https://app.waitly.dk/signup/841b3957-2bd6-4403-8159-9bb136653d04","signUpText":"Tilmelding"},{"id":810,"name":"A/B Gertsens Gaard","address":"Kastruplundgade, Kastrup","zip":"2770","city":"Kastrup","lat":55.634911,"lng":12.6431192,"units":46,"buyMin":643075,"buyMax":2259452,"rentMin":1449,"rentMax":5090,"roomsMin":1,"roomsMax":5,"extTotal":107,"extActive":92,"currency":"DKK","url":"https://app.waitly.dk/signup/b0e48fa6-8341-46c6-be3f-875f62169869","signUpText":"Tilmelding"},{"id":43,"name":"A/B Nattergalevej 22-30","address":"Nattergalevej 30, st. th, 2400 København NV","zip":"2400","city":"København NV","lat":55.69826962,"lng":12.53102616,"units":40,"buyMin":311705,"buyMax":656220,"rentMin":4016,"rentMax":11942,"roomsMin":1,"roomsMax":3,"extTotal":200,"extActive":183,"currency":"DKK","url":"https://app.waitly.dk/signup/23f843c0-fb74-424f-9068-8e6d2da4830c","signUpText":"Tilmelding"},{"id":812,"name":"A/B Vilhelmsro Syd l","address":"Vilhelmsro 646, 3480 Fredensborg","zip":"3480","city":"Fredensborg","lat":55.96106215,"lng":12.41508085,"units":23,"buyMin":959050,"buyMax":1783833,"rentMin":2209,"rentMax":4109,"roomsMin":2,"roomsMax":4,"extTotal":46,"extActive":45,"currency":"DKK","url":"https://app.waitly.dk/signup/b2b81050-77b5-44c9-95d4-d456c42e0923","signUpText":"Tilmelding"},{"id":2092,"name":"A/B Grønlandsgården","address":"Skotlands Plads 6, 1. tv, 2300 København S","zip":"2300","city":"København S","lat":55.65778224,"lng":12.60517545,"units":72,"buyMin":null,"buyMax":null,"rentMin":3300,"rentMax":10600,"roomsMin":2,"roomsMax":3,"extTotal":144,"extActive":138,"currency":"DKK","url":"https://app.waitly.dk/signup/efc2db7b-1baf-4f7f-83fe-9f5c269cea42","signUpText":"Tilmelding"},{"id":46,"name":"A/B Kastanjebo","address":"Charlotte Muncks Vej 35, st. th, 2400 København NV","zip":"2400","city":"København NV","lat":55.71400327,"lng":12.53589833,"units":148,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":100,"extActive":88,"currency":"DKK","url":"https://app.waitly.dk/signup/5a21d92d-a583-4565-aabb-f1b7d289b02e","signUpText":"Tilmelding"},{"id":47,"name":"A/B ABF Langelandsvej 28-44","address":"Langelandsvej 32B, st., 2000 Frederiksberg","zip":"2000","city":"Frederiksberg","lat":55.68548962,"lng":12.53107971,"units":69,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":400,"extActive":326,"currency":"DKK","url":"https://app.waitly.dk/signup/0981eedc-0251-482e-857f-2afc772fac92","signUpText":"Tilmelding"},{"id":49,"name":"A/B Westend 24-26","address":"Westend 26, st. th, 1661 København V","zip":"1661","city":"København V","lat":55.67052205,"lng":12.5517873,"units":17,"buyMin":1246895,"buyMax":2493791,"rentMin":null,"rentMax":null,"roomsMin":2,"roomsMax":6,"extTotal":150,"extActive":139,"currency":"DKK","url":"https://app.waitly.dk/signup/b0ee0666-5748-404b-905c-232f73742e92","signUpText":"Tilmelding"},{"id":2097,"name":"A/B Krogen","address":"Kastrupkrogen 12, 2770 Kastrup","zip":"2770","city":"Kastrup","lat":55.6364483,"lng":12.6443533,"units":50,"buyMin":775000,"buyMax":1650000,"rentMin":2850,"rentMax":5000,"roomsMin":2,"roomsMax":3,"extTotal":175,"extActive":146,"currency":"DKK","url":"https://app.waitly.dk/signup/c84a0c4a-ff1f-45eb-acaf-cef2b8bdf4a4","signUpText":"Tilmelding"},{"id":2098,"name":"A/B Regnbuen II","address":"Nørrebjerg Runddel 137, Over Holluf, 5220 Odense SØ","zip":"5220","city":"Odense SØ","lat":55.36141787,"lng":10.47119271,"units":8,"buyMin":543900,"buyMax":671920,"rentMin":4122,"rentMax":4993,"roomsMin":2,"roomsMax":3,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/9d00384b-ba00-453a-aaa1-ffec4e61f36e","signUpText":"Få besked"},{"id":51,"name":"A/B Hedebygård","address":"Hedebygade 12, st. 2, 1754 København V","zip":"1754","city":"København V","lat":55.66935826,"lng":12.54387271,"units":31,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":50,"extActive":47,"currency":"DKK","url":"","signUpText":""},{"id":819,"name":"A/B Reventlowsgade 12 A-B","address":"Reventlowsgade 12, 1651 København V","zip":"1651","city":"København V","lat":55.67272089,"lng":12.56312061,"units":17,"buyMin":2193531,"buyMax":9012552,"rentMin":1471,"rentMax":4830,"roomsMin":1,"roomsMax":6,"extTotal":105,"extActive":99,"currency":"DKK","url":"https://app.waitly.dk/signup/a9980a56-388a-48d3-b616-66501a161913","signUpText":"Tilmelding"},{"id":2099,"name":"A/B Telemarken","address":"Telemarksgade 2, 4., 2300 København S","zip":"2300","city":"København S","lat":55.65944697,"lng":12.60074696,"units":101,"buyMin":1905655,"buyMax":4750048,"rentMin":2121,"rentMax":5286,"roomsMin":2,"roomsMax":5,"extTotal":308,"extActive":306,"currency":"DKK","url":"https://app.waitly.dk/signup/f8e4ac9c-d9b5-45cb-8f28-54a1f7db19e8","signUpText":"Tilmelding"},{"id":52,"name":"A/B Tusindfryd","address":"Enghavevej 24, 1. th, 1674 København V","zip":"1674","city":"København V","lat":55.66939551,"lng":12.54515632,"units":32,"buyMin":626657,"buyMax":3152561,"rentMin":1910,"rentMax":6293,"roomsMin":1,"roomsMax":4,"extTotal":410,"extActive":381,"currency":"DKK","url":"https://app.waitly.dk/signup/64fc0e40-90c8-46a2-ba2a-a89082a11ded","signUpText":"Tilmelding"},{"id":53,"name":"A/B Grønlunds Allé","address":"Viemosevej 62, 2610 Rødovre","zip":"2610","city":"Rødovre","lat":55.71274658,"lng":12.44860766,"units":23,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":98,"extActive":81,"currency":"DKK","url":"https://app.waitly.dk/signup/6d49b968-246c-463f-950f-4985ffe05183","signUpText":"Tilmelding"},{"id":55,"name":"A/B Istedgade 140 / Mysundegade 26-30","address":"Mysundegade 30, 1. th, 1668 København V","zip":"1668","city":"København V","lat":55.66779766,"lng":12.54797981,"units":34,"buyMin":1100000,"buyMax":2800000,"rentMin":5300,"rentMax":10600,"roomsMin":2,"roomsMax":4,"extTotal":346,"extActive":328,"currency":"DKK","url":"https://app.waitly.dk/signup/96bcf8be-8543-439c-bd2e-c68460996c39","signUpText":"Tilmelding"},{"id":56,"name":"A/B Ved Engen","address":"Voldumvej 53, st. th, 2610 Rødovre","zip":"2610","city":"Rødovre","lat":55.68556068,"lng":12.46546163,"units":97,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":null,"extActive":null,"currency":"DKK","url":"","signUpText":""},{"id":57,"name":"A/B Dannevirke","address":"Alsgade 9, st., 1764 København V","zip":"1764","city":"København V","lat":55.6648466,"lng":12.54087553,"units":151,"buyMin":741000,"buyMax":3260400,"rentMin":2143,"rentMax":9429,"roomsMin":1,"roomsMax":5,"extTotal":158,"extActive":140,"currency":"DKK","url":"","signUpText":""},{"id":58,"name":"A/B Cumberland","address":"Cumberlandsgade 15, st. th, 2300 København S","zip":"2300","city":"København S","lat":55.66762765,"lng":12.61475271,"units":33,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":165,"extActive":152,"currency":"DKK","url":"https://app.waitly.dk/signup/bf52b27d-3c77-4555-8176-46c09994b887","signUpText":"Tilmelding"},{"id":572,"name":"A/B Grønnebo","address":"Siciliensgade 3, st. th, 2300 København S","zip":"2300","city":"København S","lat":55.65331212,"lng":12.61827509,"units":78,"buyMin":600000,"buyMax":2000000,"rentMin":3000,"rentMax":8000,"roomsMin":1,"roomsMax":5,"extTotal":120,"extActive":114,"currency":"DKK","url":"https://app.waitly.dk/signup/ec1bab45-975b-44ec-af5f-e346fb274326","signUpText":"Tilmelding"},{"id":2108,"name":"A/B Søborg Hovedgade 39-47","address":"Søborg Hovedgade 47, 2860 Søborg","zip":"2860","city":"Søborg","lat":55.7318279,"lng":12.51848931,"units":30,"buyMin":821979,"buyMax":1315155,"rentMin":3957,"rentMax":6331,"roomsMin":2,"roomsMax":3,"extTotal":63,"extActive":63,"currency":"DKK","url":"https://app.waitly.dk/signup/4a20b736-8190-4b7b-9887-4093bbf2942f","signUpText":"Tilmelding"},{"id":61,"name":"A/B Jæger","address":"Hørsholmsgade 34, 2200 København N","zip":"2200","city":"København N","lat":55.69365482,"lng":12.54220282,"units":450,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":1788,"extActive":1599,"currency":"DKK","url":"https://app.waitly.dk/signup/9e6b730a-a16b-42c2-8915-1bd9ab5ca3fd","signUpText":"Tilmelding"},{"id":2109,"name":"A/B Bypark Øst","address":"Troldhedevej 3, 6000 Kolding","zip":"6000","city":"Kolding","lat":55.49677047,"lng":9.48753502,"units":40,"buyMin":1500000,"buyMax":1800000,"rentMin":6912,"rentMax":7821,"roomsMin":3,"roomsMax":4,"extTotal":60,"extActive":60,"currency":"DKK","url":"https://app.waitly.dk/signup/484b3dd5-bf1e-4142-8164-c6f70ddca9ee","signUpText":"Tilmelding"},{"id":62,"name":"A/B Herlev Parkgård II","address":"Kærlundevej 42, st. th, 2730 Herlev","zip":"2730","city":"Herlev","lat":55.72457177,"lng":12.43083506,"units":30,"buyMin":950000,"buyMax":1480000,"rentMin":3073,"rentMax":4778,"roomsMin":2,"roomsMax":4,"extTotal":63,"extActive":55,"currency":"DKK","url":"https://app.waitly.dk/signup/5d59aa07-9b9c-477f-b4e5-d6e37f34e57c","signUpText":"Tilmelding"},{"id":575,"name":"Boligforeningen Sønder Boulevard","address":"Erik Ejegods Gade 4, st. th, 1731 København V","zip":"1731","city":"København V","lat":55.66396516,"lng":12.54661714,"units":116,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":2,"roomsMax":4,"extTotal":null,"extActive":null,"currency":"DKK","url":"","signUpText":""},{"id":576,"name":"A/B Snebærhaven 1","address":"Snebærhaven 1, 2620 Albertslund","zip":"2620","city":"Albertslund","lat":55.67512087,"lng":12.36804293,"units":20,"buyMin":1224925,"buyMax":1534918,"rentMin":4156,"rentMax":5208,"roomsMin":2,"roomsMax":4,"extTotal":57,"extActive":57,"currency":"DKK","url":"https://app.waitly.dk/signup/bcf2735c-ce57-40a5-a84b-7dddc135d05b","signUpText":"Tilmelding"},{"id":65,"name":"A/B Isto","address":"Oehlenschlægersgade 49, 1. th, 1663 København V","zip":"1663","city":"København V","lat":55.66845945,"lng":12.55013548,"units":19,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":3,"roomsMax":4,"extTotal":139,"extActive":132,"currency":"DKK","url":"https://app.waitly.dk/signup/96db2c1e-85e8-4f1f-aaad-af7437ea0152","signUpText":"Tilmelding"},{"id":578,"name":"Andelsforeningen Ved Skoven","address":"Helenelyst 243, 8220 Brabrand","zip":"8220","city":"Brabrand","lat":56.15809279,"lng":10.08896487,"units":12,"buyMin":860,"buyMax":1,"rentMin":8,"rentMax":9,"roomsMin":3,"roomsMax":3,"extTotal":18,"extActive":18,"currency":"DKK","url":"https://app.waitly.dk/signup/e69eb57a-f872-4d61-835e-af8e2c004b32","signUpText":"Tilmelding"},{"id":67,"name":"A/B Lersøgaard","address":"Midgårdsgade 5, st., 2200 København N","zip":"2200","city":"København N","lat":55.70119506,"lng":12.54193471,"units":328,"buyMin":776334,"buyMax":1917310,"rentMin":2957,"rentMax":7305,"roomsMin":1,"roomsMax":6,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/1eb605c2-5fe4-4981-bd4f-3ad6868281e4","signUpText":"Tilmelding"},{"id":68,"name":"A/B Hessensgade 21 M. FL.","address":"Eliasgade 2A, st. th, 2300 København S","zip":"2300","city":"København S","lat":55.66511596,"lng":12.61596219,"units":35,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":47,"extActive":45,"currency":"DKK","url":"https://app.waitly.dk/signup/10a32215-421c-483f-9232-3205ac0a5e57","signUpText":"Tilmelding"},{"id":324,"name":"A/B Herregårdsparken ll","address":"Skovlyst 89B, Himmelev, 4000 Roskilde","zip":"4000","city":"Roskilde","lat":55.65191177,"lng":12.11195274,"units":52,"buyMin":1011464,"buyMax":1641785,"rentMin":2567,"rentMax":4020,"roomsMin":2,"roomsMax":4,"extTotal":163,"extActive":155,"currency":"DKK","url":"https://app.waitly.dk/signup/7b2cf2f4-821d-47da-b2b2-eac8eb9dc10b","signUpText":"Tilmelding"},{"id":2116,"name":"A/B SOFIENHØJVEJ 5A-E OG 7","address":"Sofienhøjvej 7, 1. th, 2300 København S","zip":"2300","city":"København S","lat":55.64534936,"lng":12.61338623,"units":56,"buyMin":827000,"buyMax":2400000,"rentMin":2800,"rentMax":6300,"roomsMin":1,"roomsMax":4,"extTotal":144,"extActive":136,"currency":"DKK","url":"https://app.waitly.dk/signup/0204c274-a6bb-4260-b45c-c358b0ba0733","signUpText":"Tilmelding"},{"id":325,"name":"A/B Ved Fuglebakken","address":"Mathilde Fibigers Vej 20, 2000 Frederiksberg","zip":"2000","city":"Frederiksberg","lat":55.68862713,"lng":12.520682,"units":null,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":null,"extActive":null,"currency":"DKK","url":"","signUpText":""},{"id":2117,"name":"A/B Mosekonen","address":"Mosegårdsvej 18, Sparkær, 8800 Viborg","zip":"8800","city":"Viborg","lat":56.47321335,"lng":9.22864644,"units":8,"buyMin":767927,"buyMax":893133,"rentMin":2425,"rentMax":3035,"roomsMin":2,"roomsMax":3,"extTotal":2,"extActive":2,"currency":"DKK","url":"https://app.waitly.dk/signup/ed377654-5cee-4ae7-b75d-f46c4f095e0a","signUpText":"Tilmelding"},{"id":582,"name":"A/B Rønnevang","address":"Rønnevang 2, Brejning, 7080 Børkop","zip":"7080","city":"Børkop","lat":55.65758883,"lng":9.67323583,"units":6,"buyMin":471868,"buyMax":471868,"rentMin":4900,"rentMax":4900,"roomsMin":3,"roomsMax":3,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/00e4f73d-c3cc-431e-9eff-b50af6824795","signUpText":"Få besked"},{"id":2118,"name":"ABF Dalvik","address":"Dalvikvej, Viborg","zip":"8800","city":"Viborg","lat":56.4584842,"lng":9.3756757,"units":16,"buyMin":717000,"buyMax":1349000,"rentMin":1945,"rentMax":3656,"roomsMin":2,"roomsMax":4,"extTotal":2,"extActive":2,"currency":"DKK","url":"https://app.waitly.dk/signup/fc2cdca3-4ee5-4d10-bda6-52345d4ebde1","signUpText":"Tilmelding"},{"id":583,"name":"A/B Blidahlund \u0026 Esperancegården","address":"Blidahlund 2, st. th, 2920 Charlottenlund","zip":"2920","city":"Charlottenlund","lat":55.74359386,"lng":12.58025911,"units":94,"buyMin":1990000,"buyMax":8900000,"rentMin":2500,"rentMax":12000,"roomsMin":2,"roomsMax":8,"extTotal":359,"extActive":345,"currency":"DKK","url":"https://app.waitly.dk/signup/0267ec2e-1c8b-4134-a2b3-dc3970437967","signUpText":"Tilmelding"},{"id":584,"name":"Seniorandelsboligforeningen Samsonparken","address":"Landlystvej 32F, 1. mf, 2650 Hvidovre","zip":"2650","city":"Hvidovre","lat":55.66123467,"lng":12.47762117,"units":41,"buyMin":1500000,"buyMax":1950000,"rentMin":6000,"rentMax":7000,"roomsMin":2,"roomsMax":3,"extTotal":69,"extActive":64,"currency":"DKK","url":"https://app.waitly.dk/signup/a1260fe2-35d1-4c1d-b48b-67d25c5e4fd4","signUpText":"Tilmelding"},{"id":2120,"name":"A/B Tvejegården","address":"Vigerslevvej 9, st. tv, 2500 Valby","zip":"2500","city":"Valby","lat":55.67139172,"lng":12.49201114,"units":null,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":null,"extActive":null,"currency":"DKK","url":"","signUpText":""},{"id":585,"name":"A/B Mariendalshus","address":"Mariendalsvej 50E, st., 2000 Frederiksberg","zip":"2000","city":"Frederiksberg","lat":55.69090427,"lng":12.53363129,"units":74,"buyMin":800000,"buyMax":3000000,"rentMin":3000,"rentMax":9000,"roomsMin":2,"roomsMax":5,"extTotal":150,"extActive":136,"currency":"DKK","url":"https://app.waitly.dk/signup/40b4b027-7e1d-48f8-b6ef-fad429b60444","signUpText":"Tilmelding"},{"id":842,"name":"A/B Gimle","address":"Gimlevænget 4, 3460 Birkerød","zip":"3460","city":"Birkerød","lat":55.84484135,"lng":12.41708189,"units":null,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/4830ba59-f5ba-4861-b3aa-49c350744628","signUpText":"Tilmelding"},{"id":843,"name":"A/B Theklahus ll","address":"Provstevej 2D, 1. th, 2400 København NV","zip":"2400","city":"København NV","lat":55.70495445,"lng":12.52722526,"units":38,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":2,"roomsMax":5,"extTotal":2,"extActive":2,"currency":"DKK","url":"https://app.waitly.dk/signup/65a2b78d-5e0a-48da-af77-f711bda3f56a","signUpText":"Tilmelding"},{"id":332,"name":"A/B Trekanten","address":"Kildevældsgade 78, st. tv, 2100 København Ø","zip":"2100","city":"København Ø","lat":55.71416805,"lng":12.56936551,"units":null,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":null,"extActive":null,"currency":"DKK","url":"","signUpText":""},{"id":333,"name":"A/B Kurland","address":"Romsdalsgade 7, kl., 2300 København S","zip":"2300","city":"København S","lat":55.65965795,"lng":12.60213521,"units":144,"buyMin":605000,"buyMax":1540000,"rentMin":2665,"rentMax":8356,"roomsMin":1,"roomsMax":5,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/bae71fbc-70ba-4a00-9543-ee0b1f667cbe","signUpText":"Tilmelding"},{"id":846,"name":"A/B Lyon ll","address":"Amagerbrogade 95, 1., 2300 København S","zip":"2300","city":"København S","lat":55.65947052,"lng":12.60641814,"units":null,"buyMin":null,"buyMax":null,"rentMin":null,"rentMax":null,"roomsMin":null,"roomsMax":null,"extTotal":null,"extActive":null,"currency":"DKK","url":"https://app.waitly.dk/signup/f75020e2-bc1a-4273-8365-3ed175b823d8","signUpText":"Tilmelding"}];
+
+const $ = id => document.getElementById(id);
+
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function num(n) { return Number(n).toLocaleString('da-DK'); }
+function curr(p) { return p.currency || 'kr'; }
+function rangeStr(lo, hi, suffix) {
+  if (lo == null && hi == null) return null;
+  if (lo != null && hi != null && lo !== hi) return num(lo) + '–' + num(hi) + ' ' + suffix;
+  return num(lo != null ? lo : hi) + ' ' + suffix;
+}
+function buyStr(p)  { return rangeStr(p.buyMin, p.buyMax, curr(p)); }
+function rentStr(p) { var r = rangeStr(p.rentMin, p.rentMax, curr(p) + '/md'); return r; }
+function roomsStr(p) {
+  if (p.roomsMin == null && p.roomsMax == null) return null;
+  if (p.roomsMin != null && p.roomsMax != null && p.roomsMin !== p.roomsMax) return p.roomsMin + '–' + p.roomsMax + ' vær.';
+  return (p.roomsMin != null ? p.roomsMin : p.roomsMax) + ' vær.';
+}
+
+
+const cities = [...new Set(RAW.map(p => p.city).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'da'));
+cities.forEach(c => {
+  const o = document.createElement('option');
+  o.value = c; o.textContent = c;
+  $('filterCity').appendChild(o);
+});
+
+
+const map = L.map('map', { scrollWheelZoom: true }).setView([56, 11.5], 7);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>',
+  maxZoom: 19
+}).addTo(map);
+
+const icon = L.divIcon({ className: '', html: '<div class="dot"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
+
+const markers = {};
+let activeId = null;
+
+RAW.forEach(p => {
+  if (p.lat == null || p.lng == null) return;
+  const m = L.marker([p.lat, p.lng], { icon });
+  const parts = [];
+  parts.push('<div class="pop"><h3>' + escHtml(p.name) + '</h3>');
+  parts.push('<p>📍 ' + escHtml([p.address, p.zip, p.city].filter(Boolean).join(', ')) + '</p>');
+  if (p.extTotal != null) {
+    var w = '⏳ Ekstern venteliste: <b>' + num(p.extTotal) + '</b>';
+    if (p.extActive != null) w += ' (' + num(p.extActive) + ' aktive)';
+    parts.push('<p>' + w + '</p>');
+  }
+  if (p.units != null) parts.push('<p>🏢 ' + num(p.units) + ' enheder</p>');
+  const rs = roomsStr(p); if (rs) parts.push('<p>🚪 ' + escHtml(rs) + '</p>');
+  const rt = rentStr(p);  if (rt) parts.push('<p>💸 Husleje: ' + escHtml(rt) + '</p>');
+  const bu = buyStr(p);   if (bu) parts.push('<p>💰 Andelspris: ' + escHtml(bu) + '</p>');
+  if (p.url) parts.push('<a href="' + escHtml(p.url) + '" target="_blank" rel="noopener">' + escHtml(p.signUpText || 'Tilmeld venteliste') + ' →</a>');
+  parts.push('</div>');
+  m.bindPopup(parts.join(''));
+  m.on('click', () => selectItem(p.id, false));
+  markers[p.id] = m;
+});
+
+
+function selectItem(id, fly) {
+  activeId = id;
+  document.querySelectorAll('.card').forEach(c => c.classList.toggle('active', Number(c.dataset.id) === id));
+  const el = document.querySelector('.card[data-id="' + id + '"]');
+  if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  const m = markers[id];
+  if (m) {
+    if (fly) map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 14), { duration: .6 });
+    m.openPopup();
+  }
+}
+
+function cardHtml(p) {
+  const pills = [];
+  if (p.extTotal != null) pills.push('<span class="pill wait">⏳ ' + num(p.extTotal) + ' på venteliste</span>');
+  if (p.units != null) pills.push('<span class="pill units">🏢 ' + num(p.units) + ' enheder</span>');
+  const rs = roomsStr(p); if (rs) pills.push('<span class="pill rooms">🚪 ' + escHtml(rs) + '</span>');
+  const rt = rentStr(p);  if (rt) pills.push('<span class="pill rent">💸 ' + escHtml(rt) + '</span>');
+  const bu = buyStr(p);   if (bu) pills.push('<span class="pill buy">💰 ' + escHtml(bu) + '</span>');
+  return '<div class="card' + (p.id === activeId ? ' active' : '') + '" data-id="' + p.id + '">' +
+    '<div class="card-name">' + escHtml(p.name) + '</div>' +
+    '<div class="card-addr">' + escHtml([p.address, p.zip, p.city].filter(Boolean).join(', ')) + '</div>' +
+    (pills.length ? '<div class="pills">' + pills.join('') + '</div>' : '') +
+    '</div>';
+}
+
+function renderList(items) {
+  const list = $('list');
+  $('countLabel').textContent = items.length + ' af ' + RAW.length + ' vist';
+  if (!items.length) { list.innerHTML = '<div class="empty">Ingen foreninger matcher dine filtre.</div>'; return; }
+  list.innerHTML = items.map(cardHtml).join('');
+  list.querySelectorAll('.card').forEach(c => {
+    c.addEventListener('click', () => selectItem(Number(c.dataset.id), true));
+  });
+}
+
+
+function sortVal(p, key) {
+  if (key === 'ext')   return p.extTotal;
+  if (key === 'units') return p.units;
+  if (key === 'rent')  return p.rentMin != null ? p.rentMin : p.rentMax;
+  if (key === 'buy')   return p.buyMin != null ? p.buyMin : p.buyMax;
+  return null;
+}
+
+function apply() {
+  const q = $('search').value.trim().toLowerCase();
+  const city = $('filterCity').value;
+  const minRooms = $('filterRooms').value ? Number($('filterRooms').value) : null;
+  const sort = $('sortBy').value;
+
+  let items = RAW.filter(p => {
+    if (city && p.city !== city) return false;
+    if (minRooms != null) {
+      const top = p.roomsMax != null ? p.roomsMax : p.roomsMin;
+      if (top == null || top < minRooms) return false;
+    }
+    if (q) {
+      const hay = [p.name, p.address, p.city, p.zip].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const desc = sort.endsWith('_desc');
+  const key = desc ? sort.slice(0, -5) : sort;
+  items.sort((a, b) => {
+    let r;
+    if (key === 'name') {
+      r = (a.name || '').localeCompare(b.name || '', 'da');
+    } else {
+      const av = sortVal(a, key), bv = sortVal(b, key);
+      
+      if (av == null && bv == null) r = 0;
+      else if (av == null) return 1;
+      else if (bv == null) return -1;
+      else r = av - bv;
+    }
+    return desc ? -r : r;
+  });
+
+  
+  const visible = new Set(items.map(p => p.id));
+  Object.entries(markers).forEach(([id, m]) => {
+    const on = visible.has(Number(id));
+    if (on && !map.hasLayer(m)) m.addTo(map);
+    else if (!on && map.hasLayer(m)) map.removeLayer(m);
+  });
+
+  renderList(items);
+}
+
+function fitAll() {
+  const pts = RAW.filter(p => p.lat != null && p.lng != null).map(p => [p.lat, p.lng]);
+  if (pts.length) map.fitBounds(pts, { padding: [40, 40] });
+}
+
+['search', 'sortBy', 'filterCity', 'filterRooms'].forEach(id => {
+  $(id).addEventListener('input', apply);
+});
+$('resetBtn').addEventListener('click', () => {
+  $('search').value = ''; $('filterCity').value = ''; $('filterRooms').value = ''; $('sortBy').value = 'name';
+  activeId = null;
+  apply(); fitAll();
+});
+
+
+Object.values(markers).forEach(m => m.addTo(map));
+fitAll();
+apply();
+</script>
+</body>
+</html>
